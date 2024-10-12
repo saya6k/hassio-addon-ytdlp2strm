@@ -1,0 +1,26 @@
+#!/command/with-contenv bashio
+# ==============================================================================
+# Home Assistant Add-on: ytdlp2STRM
+# ==============================================================================
+#!/usr/bin/with-contenv bashio
+
+# Set the working directory
+cd /opt/ytdlp2STRM
+
+# Set the environment variable
+export AM_I_IN_A_DOCKER_CONTAINER=Yes
+
+# Fetch the first configured port from the addon configuration
+port=$(bashio::addon.port "5000/tcp")
+
+# Declare and export the port for the Docker container
+declare port
+export DOCKER_PORT=$port
+
+# Log the port (optional for debugging purposes)
+bashio::log.info "Using port $port"
+
+# Run the Python script
+exec python3 ./main.py
+
+bashio::log.info "ytdlp2STRM is running on port $port..."

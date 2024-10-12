@@ -1,0 +1,261 @@
+#!/command/with-contenv bashio
+# ==============================================================================
+# Home Assistant Add-on: ytdlp2STRM
+# ==============================================================================
+#!/usr/bin/with-contenv bashio
+
+#!/command/with-contenv bashio
+# shellcheck shell=bash
+# ==============================================================================
+# Home Assistant Add-on: ytdlp2STRM
+# Sets up ytdlp2STRM before the server starts
+# ==============================================================================
+# shellcheck shell=bash
+
+
+
+set -e
+
+if bashio::config.has_value "host"; then
+    host=$(bashio::config 'host')
+else
+    host="$(bashio::addon.hostname)"
+fi
+
+if bashio::config.has_value "keep_old_stream"; then
+    keep_old_strm=$(bashio::config 'keep_old_stream')
+else
+    keep_old_strm=False
+fi
+
+if bashio::config.has_value "temp_file_duration"; then
+    temp_file_duration=$(bashio::config 'temp_file_duration')
+else
+    temp_file_duration=86400
+fi
+
+
+
+bashio::log.debug 'Applying global config...'
+
+if ! bashio::fs.file_exists "/config/config.json" || bashio::config.true "force_update" ; then
+
+    if bashio::config.true "force_update"; then
+        bashio::log.warn 'Force Update Enabled. Rewriting original config...'
+        rm /config/config.json
+    else
+        bashio::log.notice '/config/config.json does not exist. Creating initial config...'
+    fi
+    
+    jq -n \
+    --arg ytdlp2strm_host "$host" \
+    --arg keep_old_strm "$keep_old_strm" \
+    --arg temp_file_duration "$temp_file_duration" \
+    '
+    {
+        "ytdlp2strm_host" : $ytdlp2strm_host,
+        "ytdlp2strm_port": "5000",
+        "ytdlp2strm_keep_old_strm": $keep_old_strm,
+        "ytdlp2strm_temp_file_duration": $temp_file_duration
+    }
+    ' > /config/config.json
+
+    ln -s /config/config.json /opt/ytdlp2STRM/config/config.json
+else
+    bashio::log.info '/config/config.json exists, skipping...'
+    ln -s /config/config.json /opt/ytdlp2STRM/config/config.json
+fi
+
+
+
+# Read the cron_youtube configuration options
+cron_youtube_every=$(bashio::config 'cron_youtube.every')
+cron_youtube_qty=$(bashio::config 'cron_youtube.qty')
+cron_youtube_at=$(bashio::config 'cron_youtube.at')
+cron_youtube_timezone=$(bashio::config 'cron_youtube.timezone')
+cron_youtube_do=$(bashio::config 'cron_youtube.do')
+
+# Read the cron_twitch configuration options
+cron_twitch_every=$(bashio::config 'cron_twitch.every')
+cron_twitch_qty=$(bashio::config 'cron_twitch.qty')
+cron_twitch_at=$(bashio::config 'cron_twitch.at')
+cron_twitch_timezone=$(bashio::config 'cron_twitch.timezone')
+cron_twitch_do=$(bashio::config 'cron_twitch.do')
+
+
+
+bashio::log.debug 'Applying crons list...'
+
+if ! bashio::fs.file_exists "/config/crons.json" || bashio::config.true "force_update" ; then
+
+    if bashio::config.true "force_update"; then
+        bashio::log.warn 'Force Update Enabled. Rewriting original config...'
+        rm /config/crons.json
+    else
+        bashio::log.notice '/config/crons.json does not exist. Creating initial config...'
+    fi
+
+    # Build the crons.json file using jq
+    jq -n \
+    --arg youtube_every "$cron_youtube_every" \
+    --arg youtube_qty "$cron_youtube_qty" \
+    --arg youtube_timezone "$cron_youtube_timezone" \
+    --arg youtube_do "$cron_youtube_do" \
+    --arg twitch_every "$cron_twitch_every" \
+    --arg twitch_qty "$cron_twitch_qty" \
+    --arg twitch_timezone "$cron_twitch_timezone" \
+    --arg twitch_do "$cron_twitch_do" \
+    '
+    [
+        {
+        "every": $youtube_every,
+        "qty": $youtube_qty,
+        "at": "",
+        "timezone": $youtube_timezone,
+        "do": ["--media", "youtube", "--params", $youtube_do]
+        },
+        {
+        "every": $twitch_every,
+        "qty": $twitch_qty,
+        "at": "",
+        "timezone": $twitch_timezone,
+        "do": ["--media", "twitch", "--params", $twitch_do]
+        }
+    ]
+    ' > /config/crons.json
+
+    ln -s /config/crons.json /opt/ytdlp2STRM/config/crons.json
+else
+    bashio::log.info '/config/crons.json exists, skipping...'
+    ln -s /config/crons.json /opt/ytdlp2STRM/config/crons.json
+fi
+
+
+
+bashio::log.debug 'Applying youtube channel list...'
+
+if ! bashio::fs.file_exists "/config/yt_channel_list.json" || bashio::config.true "force_update"; then
+
+    if bashio::config.true "force_update"; then
+        bashio::log.warn 'Force Update Enabled. Rewriting original config...'
+        rm /config/yt_channel_list.json
+    else
+        bashio::log.notice '/config/yt_channel_list.json does not exist. Creating initial config...'
+    fi
+
+    # Start writing the JSON array to the file
+    echo "[" > /config/yt_channel_list.json
+
+    # Get the total number of entries in the channel list
+    yt_channel_count=$(bashio::config 'youtube_channel_list | length')
+
+    # Loop over each channel in the channel_list
+    for i in $(seq 0 $((yt_channel_count - 1))); do
+        # Get the current channel from the config
+        yt_channel=$(bashio::config "youtube_channel_list[${i}]")
+        
+        # Add the channel to the JSON file
+        # If it's the last item, do not add a comma at the end
+        if [ "$i" -eq $((yt_channel_count - 1)) ]; then
+            echo "    \"$yt_channel\"" >> /config/yt_channel_list.json
+        else
+            echo "    \"$yt_channel\"," >> /config/yt_channel_list.json
+        fi
+    done
+
+    # Close the JSON array
+    echo "]" >> /config/yt_channel_list.json
+
+    ln -s /config/yt_channel_list.json /opt/ytdlp2STRM/plugins/youtube/channel_list.json
+else
+    bashio::log.info '/config/yt_channel_list.json exists, skipping...'
+    ln -s /config/yt_channel_list.json /opt/ytdlp2STRM/plugins/youtube/channel_list.json
+fi
+
+
+
+bashio::log.debug 'Applying youtube plugin config...'
+
+if ! bashio::fs.file_exists "/config/yt_config.json" || bashio::config.true "force_update"; then
+
+    if bashio::config.true "force_update"; then
+        bashio::log.warn 'Force Update Enabled. Rewriting original config...'
+        rm /config/yt_config.json
+    else
+        bashio::log.notice '/config/yt_config.json does not exist. Creating initial config...'
+    fi
+
+    bashio::log.info '/config/yt_config.json does not exist. Creating from example config...'
+
+    # Start writing the JSON array to the file
+    cp -p /opt/ytdlp2STRM/plugins/youtube/config.example.json /config/yt_config.json
+
+    ln -s /config/yt_config.json /opt/ytdlp2STRM/plugins/youtube/config.json
+else
+    bashio::log.info '/config/yt_config.json exists, skipping...'
+    ln -s /config/yt_config.json /opt/ytdlp2STRM/plugins/youtube/config.json
+fi
+
+
+
+bashio::log.debug 'Applying twitch channel list...'
+
+if ! bashio::fs.file_exists "/config/tw_channel_list.json" || bashio::config.true "force_update"; then
+
+    if bashio::config.true "force_update"; then
+        bashio::log.warn 'Force Update Enabled. Rewriting original config...'
+        rm /config/tw_channel_list.json
+    else
+        bashio::log.notice '/config/tw_channel_list.json does not exist. Creating initial config...'
+    fi
+
+    # Start writing the JSON array to the file
+    echo "[" > /config/tw_channel_list.json
+
+    # Get the total number of entries in the channel list
+    tw_channel_count=$(bashio::config 'twitch_channel_list | length')
+
+    # Loop over each channel in the channel_list
+    for i in $(seq 0 $((tw_channel_count - 1))); do
+        # Get the current channel from the config
+        tw_channel=$(bashio::config "twitch_channel_list[${i}]")
+        
+        # Add the channel to the JSON file
+        # If it's the last item, do not add a comma at the end
+        if [ "$i" -eq $((tw_channel_count - 1)) ]; then
+            echo "    \"$yt_channel\"" >> /config/tw_channel_list.json
+        else
+            echo "    \"$yt_channel\"," >> /config/tw_channel_list.json
+        fi
+    done
+
+    # Close the JSON array
+    echo "]" >> /config/tw_channel_list.json
+
+    ln -s /config/tw_channel_list.json /opt/ytdlp2STRM/plugins/twitch/channel_list.json
+else
+    bashio::log.info '/config/tw_channel_list.json exists, skipping...'
+    ln -s /config/tw_channel_list.json /opt/ytdlp2STRM/plugins/twitch/channel_list.json
+fi
+
+
+
+bashio::log.debug 'Applying twitch plugin config...'
+
+if ! bashio::fs.file_exists "/config/tw_config.json" || bashio::config.true "force_update"; then
+
+    if bashio::config.true "force_update"; then
+        bashio::log.warn 'Force Update Enabled. Rewriting original config...'
+        rm /config/tw_config.json
+    else
+        bashio::log.notice '/config/tw_config.json does not exist. Creating initial config...'
+    fi
+
+    # Start writing the JSON array to the file
+    cp -p /opt/ytdlp2STRM/plugins/twitch/config.example.json /config/tw_config.json
+
+    ln -s /config/tw_config.json /opt/ytdlp2STRM/plugins/twitch/config.json
+else
+    bashio::log.info '/config/tw_config.json exists, skipping...'
+    ln -s /config/tw_config.json /opt/ytdlp2STRM/plugins/twitch/config.json
+fi
